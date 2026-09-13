@@ -1,18 +1,51 @@
-func updateWebsiteStatus(target string, status string, responseTime int64) {
-	mu.Lock()
-	defer mu.Unlock()
+package main
 
-	for i := range websites {
-		if websites[i].URL == target {
-			websites[i].Status = status
-			websites[i].ResponseTime = responseTime
-			break
-		}
+import (
+	"fmt"
+	"net/http"
+	"time"
+)
+
+func monitorWebsite(target string) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
 	}
 
-	_ = updateDatabaseStatus(
-		target,
-		status,
-		responseTime,
-	)
+	for {
+		start := time.Now()
+
+		resp, err := client.Get(target)
+		responseTime := time.Since(start)
+
+		status := "DOWN"
+
+		if err == nil {
+			resp.Body.Close()
+
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				status = "UP"
+			}
+		}
+
+		updateWebsiteStatus(
+			target,
+			status,
+			responseTime.Milliseconds(),
+		)
+
+		if status == "UP" {
+			fmt.Printf(
+				"🟢 %s | UP | %dms\n",
+				target,
+				responseTime.Milliseconds(),
+			)
+		} else {
+			fmt.Printf(
+				"🔴 %s | DOWN\n",
+				target,
+			)
+		}
+
+		time.Sleep(1 * time.Minute)
+	}
 }
