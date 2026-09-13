@@ -2,100 +2,30 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-type CheckResult struct {
-	URL        string
-	Status     string
-	StatusCode int
-	Response   time.Duration
-	Error      string
+type PageData struct {
+	Websites []Website
+	Message  string
 }
 
-func checkWebsite(target string) CheckResult {
-	start := time.Now()
-
-	parsed, err := url.ParseRequestURI(target)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return CheckResult{
-			URL:    target,
-			Status: "INVALID",
-			Error:  "Please enter a valid URL.",
-		}
-	}
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Get(target)
-	responseTime := time.Since(start)
-
-	if err != nil {
-		return CheckResult{
-			URL:      target,
-			Status:   "DOWN",
-			Response: responseTime,
-			Error:    err.Error(),
-		}
-	}
-
-	defer resp.Body.Close()
-
-	status := "UP"
-
-	if resp.StatusCode >= 400 {
-		status = "DOWN"
-	}
-
-	return CheckResult{
-		URL:        target,
-		Status:     status,
-		StatusCode: resp.StatusCode,
-		Response:   responseTime,
-	}
-}
-
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("url")
-
-	resultHTML := ""
-
-	if target != "" {
-		result := checkWebsite(target)
-
-		if result.Status == "UP" {
-			resultHTML = fmt.Sprintf(`
-				<div class="result up">
-					<h2>🟢 WEBSITE ONLINE</h2>
-					<p><strong>Website:</strong> %s</p>
-					<p><strong>Status:</strong> %d</p>
-					<p><strong>Response:</strong> %v</p>
-				</div>
-			`, result.URL, result.StatusCode, result.Response)
-		} else {
-			resultHTML = fmt.Sprintf(`
-				<div class="result down">
-					<h2>🔴 WEBSITE DOWN</h2>
-					<p><strong>Website:</strong> %s</p>
-					<p>%s</p>
-				</div>
-			`, result.URL, result.Error)
-		}
-	}
-
-	fmt.Fprintln(w, `
+var pageTemplate = template.Must(template.New("dashboard").Parse(`
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Simon Tech Monitor</title>
 
 	<style>
+		* {
+			box-sizing: border-box;
+		}
+
 		body {
 			margin: 0;
 			font-family: Arial, sans-serif;
@@ -104,12 +34,13 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		header {
-			text-align: center;
-			padding: 40px 20px;
 			background: #111827;
+			padding: 35px 20px;
+			text-align: center;
 		}
 
 		header h1 {
+			margin: 0 0 10px;
 			font-size: 32px;
 		}
 
@@ -118,29 +49,34 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		.container {
-			max-width: 800px;
-			margin: 40px auto;
+			max-width: 900px;
+			margin: 30px auto;
 			padding: 20px;
 		}
 
-		.monitor {
+		.panel {
 			background: #1e293b;
-			padding: 30px;
+			padding: 25px;
 			border-radius: 16px;
-			text-align: center;
+			margin-bottom: 20px;
+		}
+
+		.form {
+			display: flex;
+			gap: 10px;
 		}
 
 		input {
-			width: 65%;
-			padding: 15px;
+			flex: 1;
+			padding: 14px;
 			border: 0;
 			border-radius: 8px;
 			font-size: 16px;
+			outline: none;
 		}
 
 		button {
-			padding: 15px 20px;
-			margin-left: 8px;
+			padding: 14px 18px;
 			border: 0;
 			border-radius: 8px;
 			background: #2563eb;
@@ -153,21 +89,49 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			background: #1d4ed8;
 		}
 
-		.result {
-			margin-top: 25px;
-			padding: 20px;
+		.website {
+			background: #0f172a;
+			padding: 18px;
 			border-radius: 12px;
-			text-align: left;
+			margin-top: 12px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 15px;
+		}
+
+		.url {
+			word-break: break-all;
+		}
+
+		.status {
+			font-weight: bold;
 		}
 
 		.up {
-			background: #064e3b;
-			border: 1px solid #10b981;
+			color: #22c55e;
 		}
 
 		.down {
-			background: #450a0a;
-			border: 1px solid #ef4444;
+			color: #ef4444;
+		}
+
+		.checking {
+			color: #facc15;
+		}
+
+		.remove {
+			background: #dc2626;
+		}
+
+		.remove:hover {
+			background: #b91c1c;
+		}
+
+		.empty {
+			color: #94a3b8;
+			text-align: center;
+			padding: 20px;
 		}
 
 		footer {
@@ -176,15 +140,14 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			color: #64748b;
 		}
 
-		@media (max-width: 600px) {
-			input {
-				width: 100%;
-				margin-bottom: 10px;
+		@media (max-width: 650px) {
+			.form {
+				flex-direction: column;
 			}
 
-			button {
-				width: 100%;
-				margin: 0;
+			.website {
+				flex-direction: column;
+				align-items: stretch;
 			}
 		}
 	</style>
@@ -198,11 +161,11 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 </header>
 
 <div class="container">
-	<div class="monitor">
 
-		<h2>🔍 Check a Website</h2>
+	<div class="panel">
+		<h2>➕ Add Website</h2>
 
-		<form method="GET">
+		<form class="form" method="POST" action="/add">
 			<input
 				type="url"
 				name="url"
@@ -211,15 +174,55 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 			>
 
 			<button type="submit">
-				Check Website
+				Add Website
 			</button>
 		</form>
-`)
-
-	fmt.Fprintln(w, resultHTML)
-
-	fmt.Fprintln(w, `
 	</div>
+
+	<div class="panel">
+		<h2>🌐 Monitored Websites</h2>
+
+		{{if .Websites}}
+
+			{{range .Websites}}
+			<div class="website">
+
+				<div class="url">
+					<strong>{{.URL}}</strong>
+				</div>
+
+				<div class="status
+					{{if eq .Status "UP"}}up
+					{{else if eq .Status "DOWN"}}down
+					{{else}}checking
+					{{end}}">
+					{{if eq .Status "UP"}}
+						🟢 UP
+					{{else if eq .Status "DOWN"}}
+						🔴 DOWN
+					{{else}}
+						🟡 CHECKING
+					{{end}}
+				</div>
+
+				<form method="POST" action="/remove">
+					<input type="hidden" name="url" value="{{.URL}}">
+					<button class="remove" type="submit">
+						🗑️ Remove
+					</button>
+				</form>
+
+			</div>
+			{{end}}
+
+		{{else}}
+			<div class="empty">
+				No websites are being monitored yet.
+			</div>
+		{{end}}
+
+	</div>
+
 </div>
 
 <footer>
@@ -229,15 +232,59 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 </body>
 </html>
-`)
+`))
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	data := PageData{
+		Websites: getWebsites(),
+	}
+
+	err := pageTemplate.Execute(w, data)
+	if err != nil {
+		http.Error(w, "Unable to load dashboard", http.StatusInternalServerError)
+	}
+}
+
+func addHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	target := r.FormValue("url")
+
+	parsed, err := url.ParseRequestURI(target)
+
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		http.Error(w, "Invalid website URL", http.StatusBadRequest)
+		return
+	}
+
+	addWebsite(target)
+
+	go monitorWebsite(target)
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func removeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	target := r.FormValue("url")
+
+	removeWebsite(target)
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func main() {
 
 	http.HandleFunc("/", homeHandler)
-
-	// Start automatic monitoring in the background.
-	go monitorWebsite("https://example.com")
+	http.HandleFunc("/add", addHandler)
+	http.HandleFunc("/remove", removeHandler)
 
 	fmt.Println("🚀 Simon Tech Monitor running on port 8080")
 
@@ -246,4 +293,6 @@ func main() {
 	if err != nil {
 		fmt.Println("Server error:", err)
 	}
+
+	_ = time.Second
 }
