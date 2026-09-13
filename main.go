@@ -5,7 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
-	"time"
+	"os"
 )
 
 type PageData struct {
@@ -282,17 +282,31 @@ func removeHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
+	if err := initDatabase(); err != nil {
+		fmt.Println("Database error:", err)
+		return
+	}
+
+	if err := loadWebsites(); err != nil {
+		fmt.Println("Failed to load websites:", err)
+		return
+	}
+
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/add", addHandler)
 	http.HandleFunc("/remove", removeHandler)
 
-	fmt.Println("🚀 Simon Tech Monitor running on port 8080")
+	port := os.Getenv("PORT")
 
-	err := http.ListenAndServe(":8080", nil)
+	if port == "" {
+		port = "8080"
+	}
+
+	fmt.Printf("🚀 Simon Tech Monitor running on port %s\n", port)
+
+	err := http.ListenAndServe(":"+port, nil)
 
 	if err != nil {
 		fmt.Println("Server error:", err)
 	}
-
-	_ = time.Second
 }
