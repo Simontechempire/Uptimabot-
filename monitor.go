@@ -15,22 +15,45 @@ func monitorWebsite(target string) {
 		start := time.Now()
 
 		resp, err := client.Get(target)
-		elapsed := time.Since(start)
+		responseTime := time.Since(start)
 
-		if err != nil {
-			fmt.Printf("🔴 %s is DOWN | Error: %v\n", target, err)
-		} else {
+		status := "DOWN"
+
+		if err == nil {
 			resp.Body.Close()
 
-			if resp.StatusCode >= 400 {
-				fmt.Printf("🔴 %s is DOWN | Status: %d | Response: %v\n",
-					target, resp.StatusCode, elapsed)
-			} else {
-				fmt.Printf("🟢 %s is UP | Status: %d | Response: %v\n",
-					target, resp.StatusCode, elapsed)
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				status = "UP"
 			}
 		}
 
+		updateWebsiteStatus(target, status)
+
+		if status == "UP" {
+			fmt.Printf(
+				"🟢 %s | UP | %dms\n",
+				target,
+				responseTime.Milliseconds(),
+			)
+		} else {
+			fmt.Printf(
+				"🔴 %s | DOWN\n",
+				target,
+			)
+		}
+
 		time.Sleep(1 * time.Minute)
+	}
+}
+
+func updateWebsiteStatus(target string, status string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i := range websites {
+		if websites[i].URL == target {
+			websites[i].Status = status
+			return
+		}
 	}
 }
